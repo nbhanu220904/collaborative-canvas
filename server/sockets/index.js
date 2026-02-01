@@ -1,6 +1,7 @@
 const registerRoomHandlers = require('./room.socket');
 const registerDrawingHandlers = require('./drawing.socket');
 const registerPresenceHandlers = require('./presence.socket');
+const registerCommentHandlers = require('./comment.socket');
 const logger = require('../utils/logger');
 
 module.exports = (io) => {
@@ -10,5 +11,6 @@ module.exports = (io) => {
       registerRoomHandlers(io, socket);
       registerDrawingHandlers(io, socket);
       registerPresenceHandlers(io, socket);
+      registerCommentHandlers(io, socket);
   });
 };

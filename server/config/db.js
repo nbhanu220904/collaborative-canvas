@@ -14,13 +14,18 @@ const connectDB = async () => {
     }
 
     try {
-        client = new MongoClient(MONGODB_URI);
+        client = new MongoClient(MONGODB_URI, {
+            tls: true,
+            tlsAllowInvalidCertificates: false,
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
+        });
         await client.connect();
         db = client.db('collaborative-canvas');
         logger.info('Successfully connected to MongoDB');
         return db;
     } catch (err) {
-        logger.error('Failed to connect to MongoDB:', err.message);
+        logger.error('Failed to connect to MongoDB:', err);
         throw err;
     }
 };

@@ -10,6 +10,7 @@ import {
   Type, 
   PaintBucket,
   Hand,
+  MessageSquare,
   ChevronRight
 } from 'lucide-react';
 
@@ -110,6 +111,14 @@ const Sidebar = ({ activeTool, setActiveTool, color, setColor, strokeWidth, setS
             active={activeTool === 'pan'} 
             onClick={() => setActiveTool('pan')} 
             label="Pan" 
+         />
+
+         {/* Comment */}
+         <SidebarIcon 
+            icon={MessageSquare} 
+            active={activeTool === 'comment'} 
+            onClick={() => setActiveTool('comment')} 
+            label="Comment (Ctrl+Alt+M)" 
          />
       </div>
       

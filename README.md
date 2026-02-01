@@ -12,7 +12,7 @@ A Magma-style collaborative whiteboard application.
     npm run dev
     ```
 
-    Runs on `http://localhost:8080`.
+    Runs on `http://localhost:5000`.
 
 2. **Client**
 

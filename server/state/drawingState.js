@@ -58,6 +58,17 @@ const drawingState = {
     return false;
   },
 
+  deleteStroke: async (roomId, strokeId) => {
+    const drawing = getDrawing(roomId);
+    const index = drawing.undoStack.findIndex(el => el.id === strokeId);
+    if (index !== -1) {
+        drawing.undoStack.splice(index, 1);
+        await Drawing.saveState(roomId, { strokes: drawing.undoStack, redoStack: drawing.redoStack });
+        return true;
+    }
+    return false;
+  },
+
   redo: async (roomId) => {
     const drawing = getDrawing(roomId);
     if (drawing.redoStack.length > 0) {
@@ -80,6 +91,15 @@ const drawingState = {
     const drawing = getDrawing(roomId);
     drawing.name = newName;
     await Drawing.rename(roomId, newName);
+  },
+
+  delete: async (roomId) => {
+    delete roomDrawings[roomId];
+    await Drawing.delete(roomId);
+  },
+
+  duplicate: async (roomId, newRoomId) => {
+    await Drawing.duplicate(roomId, newRoomId);
   },
 
   getHistory: (roomId) => getDrawing(roomId).undoStack,

@@ -2,7 +2,13 @@ const { getDB } = require('../config/db');
 const { ObjectId } = require('mongodb');
 
 const Drawings = {
-    getCollection: () => getDB().collection('drawings'),
+    getCollection: () => {
+        const db = getDB();
+        if (!db) {
+            throw new Error('Database connection not established');
+        }
+        return db.collection('drawings');
+    },
 
     // Find or Create a drawing (room)
     findOrCreate: async (drawingId, defaultData = {}) => {
@@ -18,6 +24,7 @@ const Drawings = {
                 pages: [{ id: 1 }],
                 settings: { isPublic: true, password: null },
                 allowedEmails: [],
+                isDeleted: false,
                 lastModified: new Date().toISOString()
             };
             await collection.insertOne(drawing);
@@ -61,6 +68,31 @@ const Drawings = {
         );
     },
 
+    // Soft Delete
+    delete: async (drawingId) => {
+        const collection = Drawings.getCollection();
+        return collection.updateOne(
+            { roomId: drawingId },
+            { $set: { isDeleted: true, lastModified: new Date().toISOString() } }
+        );
+    },
+
+    // Duplicate
+    duplicate: async (originalRoomId, newRoomId) => {
+        const collection = Drawings.getCollection();
+        const original = await collection.findOne({ roomId: originalRoomId });
+        if (!original) throw new Error('Original drawing not found');
+
+        const duplicate = {
+            ...original,
+            _id: new ObjectId(),
+            roomId: newRoomId,
+            name: `${original.name} (Copy)`,
+            lastModified: new Date().toISOString()
+        };
+        return collection.insertOne(duplicate);
+    },
+
     // Save thumbnail snapshot
     updateSnapshot: async (drawingId, dataUrl) => {
         const collection = Drawings.getCollection();
@@ -70,10 +102,10 @@ const Drawings = {
         );
     },
 
-    // Get all drawings for dashboard
+    // Get all drawings for dashboard (Excluding deleted)
     getAll: async () => {
         const collection = Drawings.getCollection();
-        return collection.find({}).sort({ lastModified: -1 }).toArray();
+        return collection.find({ isDeleted: { $ne: true } }).sort({ lastModified: -1 }).toArray();
     }
 };
 

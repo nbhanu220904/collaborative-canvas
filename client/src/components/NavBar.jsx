@@ -375,7 +375,7 @@ const NavBar = ({ onUndo, onRedo, activeUsers = [], onExport, onInvite, roomSett
             )}
           </div>
 
-          <div className="flex items-center justify-between space-x-1 ml-2 overflow-x-auto no-scrollbar shrink relative">
+          <div className="flex items-center justify-between space-x-1 ml-2 shrink relative">
             {Object.keys(menus).map((menu) => (
               <div key={menu} className="relative shrink-0">
                 <button
@@ -383,12 +383,12 @@ const NavBar = ({ onUndo, onRedo, activeUsers = [], onExport, onInvite, roomSett
                     openMenu === menu ? "text-green-700 bg-green-50" : "text-gray-700"
                   }`}
                   onClick={() => setOpenMenu(openMenu === menu ? null : menu)}
-                  onMouseEnter={() => setOpenMenu(menu)}
+                  onMouseEnter={() => openMenu && setOpenMenu(menu)}
                 >
                   {menu}
                 </button>
                 {openMenu === menu && (
-                  <div className="absolute left-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-[100]">
+                  <div className="absolute left-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-100">
                     {menus[menu].map((item, index) => {
                       const Icon = item.icon;
                       return (
@@ -474,7 +474,13 @@ const NavBar = ({ onUndo, onRedo, activeUsers = [], onExport, onInvite, roomSett
                     <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100/50">
                         <h2 className="text-xl font-semibold text-gray-800">Share Drawing</h2>
                         <div className="flex items-center gap-2">
-                            <button className="flex items-center gap-2 px-3 py-1.5 rounded-full hover:bg-gray-100 text-gray-600 font-medium text-sm transition-colors">
+                            <button 
+                                onClick={() => {
+                                    navigator.clipboard.writeText(window.location.href);
+                                    alert('Link copied to clipboard!');
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-full hover:bg-gray-100 text-gray-600 font-medium text-sm transition-colors"
+                            >
                                 <LinkIcon size={16} /> Copy link
                             </button>
                             <button onClick={() => setIsShareOpen(false)} className="p-2 rounded-full hover:bg-gray-100/50 text-gray-400 hover:text-gray-600 transition-colors">

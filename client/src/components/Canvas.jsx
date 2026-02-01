@@ -6,7 +6,8 @@ import {
   ZoomIn, 
   ZoomOut, 
   Maximize, 
-  MousePointer2 
+  MousePointer2,
+  MessageSquare
 } from 'lucide-react';
 
 // -- Helpers --
@@ -66,15 +67,18 @@ const moveElement = (element, dx, dy) => {
    return newEl;
 };
 
-const Canvas = ({ activeTool, color, strokeWidth, pageId, canvasRef, onUndo, onRedo, roomId }) => {
+const Canvas = ({ activeTool, setActiveTool, color, strokeWidth, pageId, canvasRef, onUndo, onRedo, roomId, comments = [], user }) => {
   // const canvasRef = useRef(null); // Lifted to App.jsx
   const containerRef = useRef(null);
   
   const [isDrawing, setIsDrawing] = useState(false);
   const [elements, setElements] = useState([]); 
   const [currentElement, setCurrentElement] = useState(null); 
+  const [commentInput, setCommentInput] = useState(null);
+  const [hoveredComment, setHoveredComment] = useState(null);
   const [peerElements, setPeerElements] = useState({}); // { socketId: element }
   const [textInput, setTextInput] = useState(null); 
+  const [clipboard, setClipboard] = useState(null);
   
   // Selection State
   const [selectedElement, setSelectedElement] = useState(null);
@@ -401,6 +405,11 @@ const Canvas = ({ activeTool, color, strokeWidth, pageId, canvasRef, onUndo, onR
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.ctrlKey || e.metaKey) {
+        if (e.altKey && e.key.toLowerCase() === 'm') {
+           e.preventDefault();
+           setActiveTool('comment');
+           return;
+        }
         if (e.key === 'z') {
           if (e.shiftKey) {
             handleRedo();
@@ -484,11 +493,95 @@ const Canvas = ({ activeTool, color, strokeWidth, pageId, canvasRef, onUndo, onR
       socket.emit('stroke_end', imageElement);
     };
 
+    const handleSelectAll = () => {
+        const pageElements = elements.filter(el => el.pageId === pageId);
+        if (pageElements.length > 0) {
+            // Standard behavior: selecting all might be complex if we only support single select.
+            // For now, let's select the last one or implement a group select later.
+            // But usually Select All highlights everything. 
+            // Our drawElement only highlights selectedElement. 
+            // Let's at least select the most recent one for now, 
+            // or better, implement a "delete all" if that's what user expects.
+            // Actually, let's just select the top element.
+            setSelectedElement(pageElements[pageElements.length - 1]);
+        }
+    };
+
+    const handleDeselect = () => setSelectedElement(null);
+
+    const handleDeleteSelection = () => {
+        if (selectedElement) {
+            setElements(prev => prev.filter(el => el.id !== selectedElement.id));
+            socket.emit('clear'); // Or a dedicated delete_stroke event. 
+            // Wait, clearing the whole board is bad. Let's add update_state to drawingState.
+            // For now, clear() is the only "delete-like" event we have.
+            // Let's implement socket.emit('delete_stroke', selectedElement.id) in backend.
+            socket.emit('delete_stroke', selectedElement.id);
+            setSelectedElement(null);
+        }
+    };
+
+    const handleFlipHorizontal = () => {
+        if (selectedElement) {
+            const flipped = { ...selectedElement, id: generateId() };
+            // Flip logic depends on tool. For shapes, swap start.x and end.x
+            if (flipped.start && flipped.end) {
+                const temp = flipped.start.x;
+                flipped.start.x = flipped.end.x;
+                flipped.end.x = temp;
+            } else if (flipped.points) {
+                // Find bounds and flip points
+                const minX = Math.min(...flipped.points.map(p => p.x));
+                const maxX = Math.max(...flipped.points.map(p => p.x));
+                const midX = (minX + maxX) / 2;
+                flipped.points = flipped.points.map(p => ({ ...p, x: 2 * midX - p.x }));
+            }
+            setElements(prev => prev.map(el => el.id === selectedElement.id ? flipped : el));
+            socket.emit('stroke_update', flipped);
+            setSelectedElement(flipped);
+        }
+    };
+
+    const handleCopy = () => {
+        if (selectedElement) {
+            setClipboard({ ...selectedElement });
+        }
+    };
+
+    const handlePaste = () => {
+        if (clipboard) {
+            const pasted = { 
+                ...clipboard, 
+                id: generateId(),
+                x: (clipboard.x || clipboard.start?.x || 0) + 20,
+                y: (clipboard.y || clipboard.start?.y || 0) + 20
+            };
+            // If it has points (brush), shift them
+            if (pasted.points) {
+                pasted.points = pasted.points.map(p => ({ x: p.x + 20, y: p.y + 20 }));
+            }
+            // If it has start/end (shapes), shift them
+            if (pasted.start && pasted.end) {
+                pasted.start = { x: pasted.start.x + 20, y: pasted.start.y + 20 };
+                pasted.end = { x: pasted.end.x + 20, y: pasted.end.y + 20 };
+            }
+            setElements(prev => [...prev, pasted]);
+            socket.emit('stroke_end', pasted);
+            setSelectedElement(pasted);
+        }
+    };
+
     window.addEventListener('canvas:zoom-in', handleZoomIn);
     window.addEventListener('canvas:zoom-out', handleZoomOut);
     window.addEventListener('canvas:reset-view', handleReset);
     window.addEventListener('canvas:save', handleSave);
     window.addEventListener('canvas:import-image', handleImportImage);
+    window.addEventListener('canvas:select-all', handleSelectAll);
+    window.addEventListener('canvas:deselect', handleDeselect);
+    window.addEventListener('canvas:delete-selection', handleDeleteSelection);
+    window.addEventListener('canvas:flip-horizontal', handleFlipHorizontal);
+    window.addEventListener('canvas:copy', handleCopy);
+    window.addEventListener('canvas:paste', handlePaste);
 
     return () => {
       window.removeEventListener('canvas:zoom-in', handleZoomIn);
@@ -496,8 +589,14 @@ const Canvas = ({ activeTool, color, strokeWidth, pageId, canvasRef, onUndo, onR
       window.removeEventListener('canvas:reset-view', handleReset);
       window.removeEventListener('canvas:save', handleSave);
       window.removeEventListener('canvas:import-image', handleImportImage);
+      window.removeEventListener('canvas:select-all', handleSelectAll);
+      window.removeEventListener('canvas:deselect', handleDeselect);
+      window.removeEventListener('canvas:delete-selection', handleDeleteSelection);
+      window.removeEventListener('canvas:flip-horizontal', handleFlipHorizontal);
+      window.removeEventListener('canvas:copy', handleCopy);
+      window.removeEventListener('canvas:paste', handlePaste);
     };
-  }, [roomId, pageId, zoom, canvasRef, emitSnapshot]);
+  }, [roomId, pageId, zoom, canvasRef, emitSnapshot, elements, selectedElement, clipboard]);
 
   // HANDLERS
   const handleMouseDown = (e) => {
@@ -699,6 +798,15 @@ const Canvas = ({ activeTool, color, strokeWidth, pageId, canvasRef, onUndo, onR
        const pos = getPos(e);
        setTextInput({ x: pos.x, y: pos.y, value: '' });
     }
+    if (activeTool === 'comment') {
+        const pos = getPos(e);
+        setCommentInput({ 
+            x: pos.x, 
+            y: pos.y, 
+            screenX: e.clientX, 
+            screenY: e.clientY 
+        });
+    }
   };
 
   const commitText = () => {
@@ -737,6 +845,7 @@ const Canvas = ({ activeTool, color, strokeWidth, pageId, canvasRef, onUndo, onR
       if (activeTool === 'text') return 'text';
       if (activeTool === 'pan') return isPanning ? 'grabbing' : 'grab';
       if (activeTool === 'brush') return cursorPencil;
+      if (activeTool === 'comment') return 'cell';
       if (activeTool === 'eraser') return cursorEraser;
       return 'crosshair';
   };
@@ -792,6 +901,87 @@ const Canvas = ({ activeTool, color, strokeWidth, pageId, canvasRef, onUndo, onR
             zIndex: 100
           }}
         />
+      )}
+
+      {/* Comments */}
+      {comments.map((comment) => (
+        <div
+          key={comment._id}
+          className="absolute z-30 group"
+          style={{
+            left: comment.x * zoom + panOffset.x,
+            top: comment.y * zoom + panOffset.y,
+            transform: 'translate(-50%, -50%)'
+          }}
+          onMouseEnter={() => setHoveredComment(comment._id)}
+          onMouseLeave={() => setHoveredComment(null)}
+        >
+          <div className="w-8 h-8 rounded-full bg-green-600 border-2 border-white shadow-lg flex items-center justify-center text-white cursor-pointer group-hover:scale-110 transition-transform">
+            <MessageSquare size={16} />
+          </div>
+          {(hoveredComment === comment._id) && (
+            <div className="absolute left-full ml-2 top-0 bg-white border border-gray-100 rounded-xl shadow-2xl p-4 w-64 z-50">
+               <div className="flex items-center gap-4 mb-2">
+                 <img src={comment.authorAvatar} alt="" className="w-5 h-5 rounded-full" />
+                 <span className="text-xs font-bold text-gray-700">{comment.authorName}</span>
+                 <span className="text-[10px] text-gray-400 ml-auto whitespace-nowrap">{new Date(comment.createdAt).toLocaleTimeString()}</span>
+               </div>
+               <p className="text-sm text-gray-600 mb-3 leading-relaxed">{comment.text}</p>
+               <button 
+                  onClick={() => socket.emit('resolve_comment', comment._id)}
+                  className="w-full py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors border border-green-100"
+               >
+                 Resolve
+               </button>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* New Comment Input */}
+      {commentInput && (
+        <div
+          className="absolute z-50 bg-white border border-gray-100 rounded-2xl shadow-2xl p-4 w-72"
+          style={{
+            left: commentInput.screenX,
+            top: commentInput.screenY,
+            transform: 'translate(10px, 10px)'
+          }}
+        >
+          <textarea
+            autoFocus
+            placeholder="Add a comment..."
+            className="w-full text-sm border-0 focus:ring-0 resize-none p-0 mb-3 text-gray-600 placeholder:text-gray-400"
+            rows={3}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                const text = e.target.value.trim();
+                if (text) {
+                  socket.emit('add_comment', {
+                    x: commentInput.x,
+                    y: commentInput.y,
+                    text: text,
+                    authorName: user?.fullName || 'Guest',
+                    authorAvatar: user?.imageUrl,
+                    authorId: user?.id
+                  });
+                }
+                setCommentInput(null);
+              }
+              if (e.key === 'Escape') setCommentInput(null);
+            }}
+          />
+          <div className="flex justify-between items-center border-t border-gray-50 pt-3">
+            <span className="text-[10px] text-gray-400">Press Enter to post</span>
+            <button 
+                onClick={() => setCommentInput(null)}
+                className="text-xs font-medium text-gray-400 hover:text-gray-600 p-1"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

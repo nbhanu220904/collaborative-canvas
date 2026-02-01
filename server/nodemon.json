@@ -1,0 +1,9 @@
+{
+  "script": "server.js",
+  "watch": ["server.js", "app.js", "config/", "models/", "sockets/", "state/", "utils/"],
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "ext": "js",
+  "delay": 500
+}

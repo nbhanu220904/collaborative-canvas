@@ -17,6 +17,16 @@ app.get('/api/drawings', async (req, res) => {
   }
 });
 
+app.delete('/api/drawings/:roomId', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    await Drawing.delete(roomId);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete drawing' });
+  }
+});
+
 app.get('/', (req, res) => {
   res.send('Collaborative Canvas API (Modular Structure)');
 });

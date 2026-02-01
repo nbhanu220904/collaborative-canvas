@@ -18,9 +18,14 @@ const CanvasRoom = ({ user, isLoaded }) => {
   const [pages, setPages] = useState([{ id: 1 }]);
   const [activePageId, setActivePageId] = useState(1);
   const [activeUsers, setActiveUsers] = useState([]);
+  const [comments, setComments] = useState([]);
   const [accessDenied, setAccessDenied] = useState(false);
   const [drawingName, setDrawingName] = useState('Untitled Drawing');
   const [roomSettings, setRoomSettings] = useState({ isPublic: true, password: null });
+
+  useEffect(() => {
+    document.title = `${drawingName} | Collaborative Canvas`;
+  }, [drawingName]);
   const [passwordInput, setPasswordInput] = useState('');
   const [passwordRequired, setPasswordRequired] = useState(false);
   const canvasRef = useRef(null);
@@ -69,6 +74,9 @@ const CanvasRoom = ({ user, isLoaded }) => {
       socket.on('room_users', setActiveUsers);
       socket.on('room_settings', setRoomSettings);
       socket.on('drawing_name', setDrawingName);
+      socket.on('comments_update', setComments);
+      socket.on('comment_added', (newComment) => setComments(prev => [...prev, newComment]));
+      socket.on('comment_resolved', (commentId) => setComments(prev => prev.filter(c => c._id !== commentId)));
       socket.on('access_denied', (data) => {
           if (data?.reason === 'password_required') setPasswordRequired(true);
           else setAccessDenied(true);
@@ -78,6 +86,9 @@ const CanvasRoom = ({ user, isLoaded }) => {
           socket.off('room_users');
           socket.off('room_settings');
           socket.off('drawing_name');
+          socket.off('comments_update');
+          socket.off('comment_added');
+          socket.off('comment_resolved');
           socket.off('access_denied');
       };
   }, []);
@@ -100,6 +111,39 @@ const CanvasRoom = ({ user, isLoaded }) => {
   const handleUpdateSettings = (settings) => socket.emit('update_settings', settings);
   const handleRenameDrawing = (newName) => socket.emit('rename_drawing', newName);
   const handleGoHome = () => navigate('/');
+
+  useEffect(() => {
+    const handleDuplicate = () => {
+      const newId = Math.random().toString(36).substring(2, 9);
+      socket.emit('duplicate_drawing', newId);
+    };
+
+    const handleDelete = () => {
+      if (window.confirm('Are you sure you want to move this drawing to the bin?')) {
+        socket.emit('delete_drawing');
+      }
+    };
+
+    window.addEventListener('canvas:duplicate', handleDuplicate);
+    window.addEventListener('canvas:move-to-bin', handleDelete);
+
+    socket.on('drawing_deleted', () => {
+      alert('Drawing moved to bin');
+      navigate('/');
+    });
+
+    socket.on('drawing_duplicated', (newRoomId) => {
+      alert('Drawing duplicated!');
+      navigate(`/canvas/${newRoomId}`);
+    });
+
+    return () => {
+      window.removeEventListener('canvas:duplicate', handleDuplicate);
+      window.removeEventListener('canvas:move-to-bin', handleDelete);
+      socket.off('drawing_deleted');
+      socket.off('drawing_duplicated');
+    };
+  }, [navigate]);
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-50 overflow-hidden text-gray-800 font-sans">
@@ -178,12 +222,15 @@ const CanvasRoom = ({ user, isLoaded }) => {
                   key={activePageId} 
                   pageId={activePageId} 
                   activeTool={activeTool} 
+                  setActiveTool={setActiveTool}
                   color={color} 
                   strokeWidth={strokeWidth} 
                   canvasRef={canvasRef} 
                   onUndo={handleUndo}
                   onRedo={handleRedo}
                   roomId={roomId}
+                  comments={comments}
+                  user={user}
                 />
               </div>
               <div className="h-auto">

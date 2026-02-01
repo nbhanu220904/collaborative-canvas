@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { UserButton, useUser } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
+import { socket } from '../socket';
 
 const Home = () => {
   const { user } = useUser();
@@ -13,11 +14,16 @@ const Home = () => {
   const [drawings, setDrawings] = useState([]);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
   const [loading, setLoading] = useState(true);
+  const [menuOpenRoomId, setMenuOpenRoomId] = useState(null);
+
+  useEffect(() => {
+    document.title = 'Artworks | Collaborative Canvas';
+  }, []);
 
   useEffect(() => {
     const fetchDrawings = async () => {
       try {
-        const res = await fetch('http://localhost:8080/api/drawings');
+        const res = await fetch('http://localhost:5000/api/drawings');
         const data = await res.json();
         setDrawings(data);
       } catch (err) {
@@ -27,6 +33,35 @@ const Home = () => {
       }
     };
     fetchDrawings();
+
+    // Listen for drawing updates
+    socket.on('drawing_updated', (updatedDrawing) => {
+      setDrawings(prev => {
+        const index = prev.findIndex(d => d.roomId === updatedDrawing.roomId);
+        if (index !== -1) {
+          if (updatedDrawing.isDeleted) {
+            return prev.filter(d => d.roomId !== updatedDrawing.roomId);
+          }
+          // Update existing
+          return prev.map(d => d.roomId === updatedDrawing.roomId ? { ...d, ...updatedDrawing } : d);
+        } else if (!updatedDrawing.isDeleted) {
+          // Add new if not deleted
+          return [updatedDrawing, ...prev];
+        }
+        return prev;
+      });
+    });
+
+    return () => {
+      socket.off('drawing_updated');
+    };
+  }, []);
+
+  // Close menu on click outside
+  useEffect(() => {
+    const handleClick = () => setMenuOpenRoomId(null);
+    window.addEventListener('click', handleClick);
+    return () => window.removeEventListener('click', handleClick);
   }, []);
 
   const handleNewCanvas = () => {
@@ -36,6 +71,22 @@ const Home = () => {
 
   const handleOpenCanvas = (roomId) => {
     navigate(`/canvas/${roomId}`);
+  };
+
+  const handleDelete = async (roomId, e) => {
+    e.stopPropagation();
+    if (window.confirm('Are you sure you want to move this artwork to the bin?')) {
+        socket.emit('delete_drawing', roomId);
+        setMenuOpenRoomId(null);
+        // Note: socket listener 'drawing_updated' will handle the UI removal globally
+    }
+  };
+
+  const handleDuplicate = async (roomId, e) => {
+    e.stopPropagation();
+    // Similar to Delete, we could trigger duplicate via socket
+    const newId = Math.random().toString(36).substring(2, 9);
+    // socket.emit('duplicate_drawing', newId); // Need server work for generic room id
   };
 
   return (
@@ -174,9 +225,37 @@ const Home = () => {
                 <div className="p-4">
                   <div className="flex items-start justify-between mb-3">
                     <h3 className="text-sm font-bold text-gray-900 truncate pr-4">{drawing.name}</h3>
-                    <button className="p-1 hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600">
-                      <MoreVertical size={16} />
-                    </button>
+                    <div className="relative">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMenuOpenRoomId(menuOpenRoomId === drawing.roomId ? null : drawing.roomId);
+                        }}
+                        className="p-1 hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-600"
+                      >
+                        <MoreVertical size={16} />
+                      </button>
+                      
+                      {menuOpenRoomId === drawing.roomId && (
+                        <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-100 rounded-lg shadow-xl py-1 z-20">
+                          {/* <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenCanvas(drawing.roomId);
+                            }}
+                            className="w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-green-50 hover:text-green-700 transition-colors"
+                          >
+                            Open
+                          </button> */}
+                          <button 
+                            onClick={(e) => handleDelete(drawing.roomId, e)}
+                            className="w-full text-left px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   
                   <div className="flex items-center justify-between">
@@ -235,10 +314,36 @@ const Home = () => {
                          <span>{new Date(drawing.lastModified).toLocaleDateString()}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <button className="p-2 hover:bg-white rounded-lg transition-all text-gray-400 hover:text-green-600 hover:shadow-sm">
+                    <td className="px-6 py-4 text-right relative">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMenuOpenRoomId(menuOpenRoomId === drawing.roomId ? null : drawing.roomId);
+                        }}
+                        className="p-2 hover:bg-white rounded-lg transition-all text-gray-400 hover:text-green-600 hover:shadow-sm"
+                      >
                         <MoreVertical size={18} />
                       </button>
+
+                      {menuOpenRoomId === drawing.roomId && (
+                        <div className="absolute right-6 top-10 w-36 bg-white border border-gray-100 rounded-lg shadow-xl py-1 z-20 text-left">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenCanvas(drawing.roomId);
+                            }}
+                            className="w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-green-50 hover:text-green-700 transition-colors"
+                          >
+                            Open
+                          </button>
+                          <button 
+                            onClick={(e) => handleDelete(drawing.roomId, e)}
+                            className="w-full text-left px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

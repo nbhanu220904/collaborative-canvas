@@ -62,10 +62,25 @@ module.exports = (io, socket) => {
       io.to(roomId).emit('redo_update', []); 
   });
 
+  // DELETE STROKE
+  socket.on('delete_stroke', async (strokeId) => {
+      const roomId = socket.roomId;
+      if (!roomId) return;
+      await drawingState.deleteStroke(roomId, strokeId);
+      io.to(roomId).emit('history_update', drawingState.getHistory(roomId));
+  });
+
     // SAVE SNAPSHOT (thumbnail)
     socket.on('save_snapshot', async ({ roomId, dataUrl }) => {
             const resolvedRoomId = roomId || socket.roomId;
             if (!resolvedRoomId || !dataUrl) return;
             await Drawing.updateSnapshot(resolvedRoomId, dataUrl);
+            
+            // Broadcast updated thumbnail to all clients for Home page
+            io.emit('drawing_updated', {
+              roomId: resolvedRoomId,
+              thumbnail: dataUrl,
+              lastModified: new Date().toISOString()
+            });
     });
 };
