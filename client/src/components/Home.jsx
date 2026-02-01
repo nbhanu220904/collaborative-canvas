@@ -155,10 +155,18 @@ const Home = () => {
                 className="group cursor-pointer bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md hover:border-green-300 transition-all"
               >
                 <div className="aspect-16/10 bg-gray-100 relative overflow-hidden">
-                  {/* Preview Placeholder */}
-                  <div className="absolute inset-0 flex items-center justify-center opacity-5 group-hover:opacity-10 transition-opacity">
-                    <MousePointer2 size={64} />
-                  </div>
+                  {drawing.thumbnail ? (
+                    <img
+                      src={drawing.thumbnail}
+                      alt={drawing.name}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center opacity-5 group-hover:opacity-10 transition-opacity">
+                      <MousePointer2 size={64} />
+                    </div>
+                  )}
                   {/* Accent bar */}
                   <div className="absolute top-0 left-0 w-full h-1 bg-green-600 transform -translate-y-1 group-hover:translate-y-0 transition-transform" />
                 </div>
@@ -207,7 +215,16 @@ const Home = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-8 rounded bg-gray-100 border border-gray-200 flex items-center justify-center overflow-hidden">
-                           <DraftingCompass size={14} className="text-gray-300" />
+                           {drawing.thumbnail ? (
+                             <img
+                               src={drawing.thumbnail}
+                               alt={drawing.name}
+                               className="w-full h-full object-cover"
+                               loading="lazy"
+                             />
+                           ) : (
+                             <DraftingCompass size={14} className="text-gray-300" />
+                           )}
                         </div>
                         <span className="font-bold text-gray-900">{drawing.name}</span>
                       </div>

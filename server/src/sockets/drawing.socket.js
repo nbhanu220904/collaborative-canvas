@@ -1,4 +1,5 @@
 const drawingState = require('../state/drawingState');
+const Drawing = require('../models/drawing.model');
 
 module.exports = (io, socket) => {
   // DRAW
@@ -60,4 +61,11 @@ module.exports = (io, socket) => {
       io.to(roomId).emit('history_update', []);
       io.to(roomId).emit('redo_update', []); 
   });
+
+    // SAVE SNAPSHOT (thumbnail)
+    socket.on('save_snapshot', async ({ roomId, dataUrl }) => {
+            const resolvedRoomId = roomId || socket.roomId;
+            if (!resolvedRoomId || !dataUrl) return;
+            await Drawing.updateSnapshot(resolvedRoomId, dataUrl);
+    });
 };

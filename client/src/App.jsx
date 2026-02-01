@@ -179,11 +179,11 @@ const CanvasRoom = ({ user, isLoaded }) => {
                   pageId={activePageId} 
                   activeTool={activeTool} 
                   color={color} 
-                  setColor={setColor} 
                   strokeWidth={strokeWidth} 
                   canvasRef={canvasRef} 
                   onUndo={handleUndo}
                   onRedo={handleRedo}
+                  roomId={roomId}
                 />
               </div>
               <div className="h-auto">

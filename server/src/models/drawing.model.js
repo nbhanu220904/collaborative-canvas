@@ -61,6 +61,15 @@ const Drawings = {
         );
     },
 
+    // Save thumbnail snapshot
+    updateSnapshot: async (drawingId, dataUrl) => {
+        const collection = Drawings.getCollection();
+        return collection.updateOne(
+            { roomId: drawingId },
+            { $set: { thumbnail: dataUrl, lastModified: new Date().toISOString() } }
+        );
+    },
+
     // Get all drawings for dashboard
     getAll: async () => {
         const collection = Drawings.getCollection();

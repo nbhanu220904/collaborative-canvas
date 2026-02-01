@@ -37,51 +37,85 @@ import {
   Mail,
   Clock,
   FileImage,
-  Download
+  Download,
+  ChevronDown,
+  Grid
 } from "lucide-react";
 import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react';
 import { useNavigate } from 'react-router-dom';
 
+const generateRoomId = () => Math.random().toString(36).substring(2, 9);
 
 const menus = {
   File: [
-    { label: "Home", icon: Home },
-    { label: "New", icon: FilePlus },
-    { label: "Quick new", icon: Copy },
-    { label: "Import", icon: Upload },
-    { label: "Duplicate", icon: Files },
-    { label: "Export", icon: Share2 },
-    { label: "Save", icon: Save },
-    { label: "History", icon: History },
-    { label: "Bin", icon: Trash2 },
-    { label: "Settings", icon: Settings },
+    { label: "Home", icon: Home, shortcut: "" },
+    { label: "New", icon: FilePlus, shortcut: "" },
+    { label: "Quick new (same size)", icon: Copy, shortcut: "" },
+    { label: "Import as a new canvas", icon: Upload, shortcut: "" },
+    { label: "Duplicate", icon: Files, shortcut: "" },
+    { label: "Export as", icon: Share2, shortcut: "", hasSubmenu: true },
+    { label: "Save", icon: Save, shortcut: "Ctrl+S" },
+    { label: "Save to version history", icon: History, shortcut: "" },
+    { label: "Open version history", icon: Clock, shortcut: "" },
+    { label: "Move to bin", icon: Trash2, shortcut: "" },
+    { label: "Drawing settings", icon: Settings, shortcut: "" },
   ],
   Edit: [
-    { label: "Undo", icon: Undo2 },
-    { label: "Redo", icon: Redo2 },
-    { label: "Cut", icon: Scissors },
-    { label: "Copy", icon: Clipboard },
-    { label: "Paste", icon: Clipboard },
+    { label: "Undo", icon: Undo2, shortcut: "Ctrl+Z" },
+    { label: "Redo", icon: Redo2, shortcut: "Ctrl+Shift+Z" },
+    { label: "Cut", icon: Scissors, shortcut: "Ctrl+X" },
+    { label: "Copy", icon: Clipboard, shortcut: "Ctrl+C" },
+    { label: "Copy merged", icon: Clipboard, shortcut: "Ctrl+Shift+C" },
+    { label: "Copy merged (no bg)", icon: Clipboard, shortcut: "" },
+    { label: "Paste", icon: Clipboard, shortcut: "Ctrl+V" },
+    { label: "Paste in place", icon: Clipboard, shortcut: "Ctrl+Shift+V" },
+    { label: "Paste on new layer", icon: Clipboard, shortcut: "" },
+    { label: "Paste file", icon: Upload, shortcut: "" },
+    { label: "Select all", icon: MousePointer2, shortcut: "Ctrl+A" },
+    { label: "Deselect", icon: MousePointer2, shortcut: "Ctrl+D" },
+    { label: "Invert selection", icon: MousePointer2, shortcut: "Ctrl+Shift+I" },
+    { label: "Delete selection", icon: Trash2, shortcut: "Delete" },
+    { label: "Arrange Layers", icon: Sliders, shortcut: "", hasSubmenu: true },
+    { label: "Trim layer", icon: Crop, shortcut: "" },
+    { label: "Pen pressure settings", icon: Sliders, shortcut: "" },
+    { label: "Application settings", icon: Settings, shortcut: "" },
   ],
   View: [
-    { label: "Zoom In", icon: ZoomIn },
-    { label: "Zoom Out", icon: ZoomOut },
-    { label: "Fullscreen", icon: Maximize },
+    { label: "Zoom in", icon: ZoomIn, shortcut: "=" },
+    { label: "Zoom out", icon: ZoomOut, shortcut: "-" },
+    { label: "Flip horizontally", icon: Maximize, shortcut: "H" },
+    { label: "Fit on screen", icon: Maximize, shortcut: "Home" },
+    { label: "Actual pixels", icon: Maximize, shortcut: "End" },
+    { label: "Reset rotation", icon: Maximize, shortcut: "Esc" },
+    { label: "Full screen", icon: Maximize, shortcut: "F11" },
+    { label: "Show in grayscale", icon: Droplet, shortcut: "" },
+    { label: "Reference Image", icon: FileImage, shortcut: "", hasSubmenu: true },
+    { label: "Save view", icon: Save, shortcut: "" },
+    { label: "Restore view", icon: History, shortcut: "" },
+    { label: "Show perspective grids", icon: Grid, shortcut: "" },
+    { label: "Personal layer visibility", icon: MousePointer2, shortcut: "", hasSubmenu: true },
+    { label: "Activity Stats", icon: Info, shortcut: "", hasSubmenu: true },
   ],
   Filter: [
-    { label: "Blur", icon: Droplet },
-    { label: "Sharpen", icon: Sliders },
-    { label: "Grayscale", icon: Sliders },
+    { label: "Last filter...", icon: Droplet, shortcut: "Ctrl+Alt+F" },
+    { label: "Gaussian blur", icon: Droplet, shortcut: "" },
+    { label: "Motion blur", icon: Droplet, shortcut: "" },
+    { label: "Hue / Saturation / Lightness", icon: Sliders, shortcut: "" },
+    { label: "Brightness / Contrast", icon: Sliders, shortcut: "" },
+    { label: "Curves", icon: Sliders, shortcut: "" },
   ],
   Help: [
-    { label: "Docs", icon: BookOpen },
-    { label: "Shortcuts", icon: Keyboard },
-    { label: "About", icon: Info },
+    { label: "Getting started", icon: BookOpen, shortcut: "" },
+    { label: "Help center", icon: Info, shortcut: "" },
+    { label: "Chat with support", icon: Users, shortcut: "" },
+    { label: "Changelog", icon: FileText, shortcut: "" },
+    { label: "Request feature", icon: UserPlus, shortcut: "" },
+    { label: "Report bug", icon: Shield, shortcut: "" },
   ],
   Admin: [
-    { label: "Users", icon: Users },
-    { label: "Permissions", icon: Shield },
-    { label: "Logs", icon: FileText },
+    { label: "Users", icon: Users, shortcut: "" },
+    { label: "Permissions", icon: Shield, shortcut: "" },
+    { label: "Logs", icon: FileText, shortcut: "" },
   ],
 };
 
@@ -92,6 +126,7 @@ const NavBar = ({ onUndo, onRedo, activeUsers = [], onExport, onInvite, roomSett
   const [shareView, setShareView] = useState('menu'); // 'menu' | 'invite'
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState(drawingName);
+  const fileInputRef = useRef(null);
   
   useEffect(() => {
     setTempName(drawingName);
@@ -116,6 +151,161 @@ const NavBar = ({ onUndo, onRedo, activeUsers = [], onExport, onInvite, roomSett
       }
   };
 
+    const createNewCanvas = () => {
+      const newId = generateRoomId();
+      navigate(`/canvas/${newId}`);
+    };
+
+    const handleMenuAction = (label) => {
+      switch (label) {
+        // File Menu
+        case 'Home':
+          if (onHome) onHome();
+          else navigate('/');
+          break;
+        case 'New':
+        case 'Quick new (same size)':
+          createNewCanvas();
+          break;
+        case 'Import as a new canvas':
+          fileInputRef.current?.click();
+          break;
+        case 'Duplicate':
+          window.dispatchEvent(new CustomEvent('canvas:duplicate'));
+          break;
+        case 'Export as':
+          setIsShareOpen(true);
+          setShareView('menu');
+          break;
+        case 'Save':
+          window.dispatchEvent(new CustomEvent('canvas:save'));
+          break;
+        case 'Save to version history':
+          window.dispatchEvent(new CustomEvent('canvas:save-version'));
+          break;
+        case 'Open version history':
+          window.dispatchEvent(new CustomEvent('canvas:open-history'));
+          break;
+        case 'Move to bin':
+          window.dispatchEvent(new CustomEvent('canvas:move-to-bin'));
+          break;
+        case 'Drawing settings':
+          window.dispatchEvent(new CustomEvent('canvas:drawing-settings'));
+          break;
+
+        // Edit Menu
+        case 'Undo':
+          window.dispatchEvent(new CustomEvent('canvas:undo'));
+          onUndo && onUndo();
+          break;
+        case 'Redo':
+          window.dispatchEvent(new CustomEvent('canvas:redo'));
+          onRedo && onRedo();
+          break;
+        case 'Cut':
+          window.dispatchEvent(new CustomEvent('canvas:cut'));
+          break;
+        case 'Copy':
+        case 'Copy merged':
+        case 'Copy merged (no bg)':
+          window.dispatchEvent(new CustomEvent('canvas:copy'));
+          break;
+        case 'Paste':
+        case 'Paste in place':
+        case 'Paste on new layer':
+          window.dispatchEvent(new CustomEvent('canvas:paste'));
+          break;
+        case 'Paste file':
+          fileInputRef.current?.click();
+          break;
+        case 'Select all':
+          window.dispatchEvent(new CustomEvent('canvas:select-all'));
+          break;
+        case 'Deselect':
+          window.dispatchEvent(new CustomEvent('canvas:deselect'));
+          break;
+        case 'Invert selection':
+          window.dispatchEvent(new CustomEvent('canvas:invert-selection'));
+          break;
+        case 'Delete selection':
+          window.dispatchEvent(new CustomEvent('canvas:delete-selection'));
+          break;
+        case 'Trim layer':
+          window.dispatchEvent(new CustomEvent('canvas:trim-layer'));
+          break;
+        case 'Pen pressure settings':
+        case 'Application settings':
+          window.dispatchEvent(new CustomEvent('canvas:settings'));
+          break;
+
+        // View Menu
+        case 'Zoom in':
+          window.dispatchEvent(new CustomEvent('canvas:zoom-in'));
+          break;
+        case 'Zoom out':
+          window.dispatchEvent(new CustomEvent('canvas:zoom-out'));
+          break;
+        case 'Flip horizontally':
+          window.dispatchEvent(new CustomEvent('canvas:flip-horizontal'));
+          break;
+        case 'Fit on screen':
+        case 'Actual pixels':
+        case 'Reset rotation':
+          window.dispatchEvent(new CustomEvent('canvas:reset-view'));
+          break;
+        case 'Full screen':
+          if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen?.();
+          } else {
+            document.exitFullscreen?.();
+          }
+          break;
+        case 'Show in grayscale':
+          window.dispatchEvent(new CustomEvent('canvas:toggle-grayscale'));
+          break;
+        case 'Save view':
+          window.dispatchEvent(new CustomEvent('canvas:save-view'));
+          break;
+        case 'Restore view':
+          window.dispatchEvent(new CustomEvent('canvas:restore-view'));
+          break;
+        case 'Show perspective grids':
+          window.dispatchEvent(new CustomEvent('canvas:toggle-grids'));
+          break;
+
+        // Filter Menu
+        case 'Gaussian blur':
+        case 'Motion blur':
+          window.dispatchEvent(new CustomEvent('canvas:apply-blur'));
+          break;
+        case 'Hue / Saturation / Lightness':
+        case 'Brightness / Contrast':
+        case 'Curves':
+          window.dispatchEvent(new CustomEvent('canvas:apply-filter'));
+          break;
+
+        // Help Menu
+        case 'Getting started':
+        case 'Help center':
+          window.open('https://docs.example.com', '_blank');
+          break;
+        case 'Chat with support':
+          window.open('https://support.example.com', '_blank');
+          break;
+        case 'Changelog':
+          window.open('https://changelog.example.com', '_blank');
+          break;
+        case 'Request feature':
+        case 'Report bug':
+          window.open('https://github.com/example/issues', '_blank');
+          break;
+
+        // Admin Menu (Keep existing)
+        default:
+          break;
+      }
+    };
+
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -135,6 +325,23 @@ const NavBar = ({ onUndo, onRedo, activeUsers = [], onExport, onInvite, roomSett
    return (
     <>
     <div ref={navRef} className="relative bg-white shadow-sm border-b border-gray-200 z-50">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = () => {
+              window.dispatchEvent(new CustomEvent('canvas:import-image', { detail: { dataUrl: reader.result } }));
+            };
+            reader.readAsDataURL(file);
+          }
+          e.target.value = '';
+        }}
+      />
       <div className="grid grid-cols-[1fr_auto_1fr] items-center px-3 h-14 w-full gap-4">
         
         {/* Left Section: Logo & Menus */}
@@ -168,34 +375,45 @@ const NavBar = ({ onUndo, onRedo, activeUsers = [], onExport, onInvite, roomSett
             )}
           </div>
 
-          <div className="flex items-center justify-between space-x-1 ml-2 overflow-x-auto no-scrollbar shrink">
+          <div className="flex items-center justify-between space-x-1 ml-2 overflow-x-auto no-scrollbar shrink relative">
             {Object.keys(menus).map((menu) => (
-              <div key={menu} className="relative shrink-0" onMouseEnter={() => setOpenMenu(menu)}>
+              <div key={menu} className="relative shrink-0">
                 <button
                   className={`px-3 py-1 rounded text-sm font-medium hover:text-green-700 hover:bg-green-50 transition-colors ${
                     openMenu === menu ? "text-green-700 bg-green-50" : "text-gray-700"
                   }`}
-                  onClick={() => setOpenMenu(menu)}
+                  onClick={() => setOpenMenu(openMenu === menu ? null : menu)}
+                  onMouseEnter={() => setOpenMenu(menu)}
                 >
                   {menu}
                 </button>
                 {openMenu === menu && (
-                  <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-50">
+                  <div className="absolute left-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl py-1 z-[100]">
                     {menus[menu].map((item, index) => {
                       const Icon = item.icon;
                       return (
                         <div
                           key={index}
-                          className="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-700 cursor-pointer"
+                          className="flex items-center justify-between gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-700 cursor-pointer transition-colors group"
                           onClick={() => {
-                            if (item.label === 'Home') navigate('/');
-                            if (item.label === 'Undo') onUndo();
-                            if (item.label === 'Redo') onRedo();
-                            setOpenMenu(null);
+                            if (!item.hasSubmenu) {
+                              handleMenuAction(item.label);
+                              setOpenMenu(null);
+                            }
                           }}
                         >
-                          <Icon size={16} />
-                          <span>{item.label}</span>
+                          <div className="flex items-center gap-3">
+                            <Icon size={16} className="text-gray-500 group-hover:text-green-600" />
+                            <span className="font-medium">{item.label}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {item.shortcut && (
+                              <span className="text-xs text-gray-400 font-mono">{item.shortcut}</span>
+                            )}
+                            {item.hasSubmenu && (
+                              <ChevronDown size={14} className="text-gray-400 -rotate-90" />
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -249,7 +467,7 @@ const NavBar = ({ onUndo, onRedo, activeUsers = [], onExport, onInvite, roomSett
     {/* Share Modal (Magma-Style Light Theme) */}
     {isShareOpen && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-100 flex items-center justify-center">
-            <div className="bg-white/90 backdrop-blur-md rounded-xl shadow-2xl w-[500px] overflow-hidden border border-white/50">
+            <div className="bg-white/90 backdrop-blur-md rounded-xl shadow-2xl w-125 overflow-hidden border border-white/50">
                 {shareView === 'menu' ? (
                 <>
                     {/* Header */}
@@ -452,24 +670,5 @@ const NavBar = ({ onUndo, onRedo, activeUsers = [], onExport, onInvite, roomSett
     </>
   );
 };
-
-const ShareOption = ({ icon: Icon, label, onClick }) => (
-    <div onClick={onClick} className="flex flex-col items-center gap-2 cursor-pointer group">
-        <div className="w-12 h-12 bg-gray-100 group-hover:bg-gray-200 rounded-full flex items-center justify-center text-gray-600 transition-colors">
-            <Icon size={20} />
-        </div>
-        <span className="text-xs text-center text-gray-600 font-medium leading-tight">{label}</span>
-    </div>
-);
-
-const ToolbarButton = ({ icon: Icon, onClick, title }) => (
-  <button
-    onClick={onClick}
-    title={title}
-    className="p-2 rounded-md text-gray-600 hover:text-green-700 hover:bg-green-50 transition-colors focus:outline-none"
-  >
-    <Icon size={18} />
-  </button>
-);
 
 export default NavBar;

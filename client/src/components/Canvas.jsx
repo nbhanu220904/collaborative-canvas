@@ -39,6 +39,9 @@ const isPointInElement = (x, y, element) => {
      const maxY = Math.max(element.start.y, element.end.y) + 10;
      return x >= minX && x <= maxX && y >= minY && y <= maxY;
   }
+    if (element.tool === 'image') {
+      return x >= element.x && x <= element.x + element.width && y >= element.y && y <= element.y + element.height;
+    }
   if (element.tool === 'brush') {
      // Check proximity to any point
      return element.points.some(p => Math.hypot(p.x - x, p.y - y) < 10);
@@ -50,9 +53,12 @@ const moveElement = (element, dx, dy) => {
    const newEl = { ...element };
    if (newEl.tool === 'brush' || newEl.tool === 'eraser') {
       newEl.points = newEl.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
-   } else if (newEl.tool === 'text') {
+  } else if (newEl.tool === 'text') {
       newEl.x += dx;
       newEl.y += dy;
+  } else if (newEl.tool === 'image') {
+    newEl.x += dx;
+    newEl.y += dy;
    } else {
       newEl.start = { x: newEl.start.x + dx, y: newEl.start.y + dy };
       newEl.end = { x: newEl.end.x + dx, y: newEl.end.y + dy };
@@ -60,7 +66,7 @@ const moveElement = (element, dx, dy) => {
    return newEl;
 };
 
-const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, onUndo, onRedo }) => {
+const Canvas = ({ activeTool, color, strokeWidth, pageId, canvasRef, onUndo, onRedo, roomId }) => {
   // const canvasRef = useRef(null); // Lifted to App.jsx
   const containerRef = useRef(null);
   
@@ -81,10 +87,13 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
   const [isPanning, setIsPanning] = useState(false);
   const [startPan, setStartPan] = useState({ x: 0, y: 0 });
   const [canRedo, setCanRedo] = useState(false);
+  const [redoStack, setRedoStack] = useState([]);
 
   const [peerCursors, setPeerCursors] = useState({});
   const lastEmitRef = useRef(0);
   const lastStrokeEmitRef = useRef(0);
+  const saveTimeoutRef = useRef(null);
+  const imageCacheRef = useRef({});
 
   // Resize
   useLayoutEffect(() => {
@@ -98,10 +107,10 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     return () => window.removeEventListener('resize', resizeCanvas);
-  }, []);
+  }, [canvasRef]);
 
   // -- Drawing Logic --
-  const drawElement = (ctx, element) => {
+  const drawElement = React.useCallback((ctx, element) => {
     ctx.beginPath();
     ctx.strokeStyle = element.color || '#000';
     ctx.fillStyle = element.fillColor || 'transparent'; 
@@ -174,8 +183,20 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
        ctx.font = `${element.width ? element.width * 10 : 20}px sans-serif`;
        ctx.fillStyle = element.color;
        ctx.fillText(element.text, element.x, element.y);
+    } else if (element.tool === 'image') {
+       if (!element.src) return;
+       const cacheKey = element.id || element.src;
+       if (!imageCacheRef.current[cacheKey]) {
+         const img = new Image();
+         img.src = element.src;
+         imageCacheRef.current[cacheKey] = img;
+       }
+       const img = imageCacheRef.current[cacheKey];
+       if (img.complete) {
+         ctx.drawImage(img, element.x, element.y, element.width, element.height);
+       }
     }
-  };
+  }, [selectedElement]);
 
   const drawCursor = (ctx, user) => {
       // user: { x, y, color }
@@ -243,7 +264,34 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
         }
     });
 
-  }, [elements, currentElement, pageId, selectedElement, panOffset, zoom, peerCursors, peerElements]);
+  }, [elements, currentElement, pageId, selectedElement, panOffset, zoom, peerCursors, peerElements, canvasRef, drawElement]);
+
+  const emitSnapshot = React.useCallback(() => {
+    if (!roomId || !canvasRef.current) return;
+    try {
+      const dataUrl = canvasRef.current.toDataURL('image/png');
+      socket.emit('save_snapshot', { roomId, dataUrl });
+    } catch {
+      // Silent fail
+    }
+  }, [roomId, canvasRef]);
+
+  // Auto-save snapshot to DB (debounced)
+  useEffect(() => {
+    if (!roomId || !canvasRef.current) return;
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      emitSnapshot();
+    }, 1200);
+
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [elements, roomId, canvasRef, emitSnapshot]);
   // Socket
   useEffect(() => {
     socket.on('history_update', (historyData) => {
@@ -268,10 +316,12 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
     });
 
     socket.on('redo_update', (data) => {
-        setCanRedo(data && data.length > 0);
+      const list = Array.isArray(data) ? data : [];
+      setRedoStack(list);
+      setCanRedo(list.length > 0);
     });
 
-    socket.on('stroke_update', (data) => {
+    socket.on('stroke_update', () => {
         // Broad history_update handles this now, but we can keep it for specific optims if any
     });
 
@@ -302,26 +352,71 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
     };
   }, []);
 
+  const applyUndoLocal = React.useCallback(() => {
+    setElements((prev) => {
+      if (!prev.length) return prev;
+      const last = prev[prev.length - 1];
+      setRedoStack((redoPrev) => {
+        const next = [...redoPrev, last];
+        setCanRedo(next.length > 0);
+        return next;
+      });
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  const applyRedoLocal = React.useCallback(() => {
+    setRedoStack((redoPrev) => {
+      if (!redoPrev.length) return redoPrev;
+      const redoItem = redoPrev[redoPrev.length - 1];
+      setElements((prev) => [...prev, redoItem]);
+      const next = redoPrev.slice(0, -1);
+      setCanRedo(next.length > 0);
+      return next;
+    });
+  }, []);
+
+  const handleUndo = React.useCallback(() => {
+    applyUndoLocal();
+    onUndo && onUndo();
+  }, [applyUndoLocal, onUndo]);
+
+  const handleRedo = React.useCallback(() => {
+    applyRedoLocal();
+    onRedo && onRedo();
+  }, [applyRedoLocal, onRedo]);
+
+  useEffect(() => {
+    const onUndoEvent = () => applyUndoLocal();
+    const onRedoEvent = () => applyRedoLocal();
+    window.addEventListener('canvas:undo', onUndoEvent);
+    window.addEventListener('canvas:redo', onRedoEvent);
+    return () => {
+      window.removeEventListener('canvas:undo', onUndoEvent);
+      window.removeEventListener('canvas:redo', onRedoEvent);
+    };
+  }, [applyUndoLocal, applyRedoLocal]);
+
   // Keyboard Shortcuts (Rule: Ctrl+Z for Undo, Ctrl+Shift+Z for Redo)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'z') {
           if (e.shiftKey) {
-            onRedo();
+            handleRedo();
           } else {
-            onUndo();
+            handleUndo();
           }
           e.preventDefault();
         } else if (e.key === 'y') {
-          onRedo();
+          handleRedo();
           e.preventDefault();
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onUndo, onRedo]);
+  }, [handleUndo, handleRedo]);
 
   const getPos = (e) => {
      const canvas = canvasRef.current;
@@ -354,6 +449,55 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
     setZoom(1);
     setPanOffset({ x: 0, y: 0 });
   };
+
+  // External menu actions
+  useEffect(() => {
+    const handleZoomIn = () => handleZoom(1.2);
+    const handleZoomOut = () => handleZoom(0.8);
+    const handleReset = () => resetZoom();
+    const handleSave = () => emitSnapshot();
+    const handleImportImage = (e) => {
+      const dataUrl = e?.detail?.dataUrl;
+      if (!dataUrl) return;
+
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const width = canvas.width / zoom;
+      const height = canvas.height / zoom;
+
+      const imageElement = {
+        id: generateId(),
+        pageId,
+        tool: 'image',
+        src: dataUrl,
+        x: 0,
+        y: 0,
+        width,
+        height,
+        author: socket.id,
+        timestamp: Date.now()
+      };
+
+      setElements(prev => [...prev, imageElement]);
+      setRedoStack([]);
+      setCanRedo(false);
+      socket.emit('stroke_end', imageElement);
+    };
+
+    window.addEventListener('canvas:zoom-in', handleZoomIn);
+    window.addEventListener('canvas:zoom-out', handleZoomOut);
+    window.addEventListener('canvas:reset-view', handleReset);
+    window.addEventListener('canvas:save', handleSave);
+    window.addEventListener('canvas:import-image', handleImportImage);
+
+    return () => {
+      window.removeEventListener('canvas:zoom-in', handleZoomIn);
+      window.removeEventListener('canvas:zoom-out', handleZoomOut);
+      window.removeEventListener('canvas:reset-view', handleReset);
+      window.removeEventListener('canvas:save', handleSave);
+      window.removeEventListener('canvas:import-image', handleImportImage);
+    };
+  }, [roomId, pageId, zoom, canvasRef, emitSnapshot]);
 
   // HANDLERS
   const handleMouseDown = (e) => {
@@ -400,6 +544,8 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
                     updated.color = color;
                 }
                 setElements(prev => [...prev, updated]);
+                setRedoStack([]);
+                setCanRedo(false);
                 socket.emit('stroke_end', updated);
                 break;
             }
@@ -475,6 +621,8 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
              };
              const movedClone = moveElement(clone, dx, dy);
              setElements(prev => [...prev, movedClone]);
+             setRedoStack([]);
+             setCanRedo(false);
              setSelectedElement(movedClone); 
              setDragOffset(pos); 
              socket.emit('stroke_end', movedClone);
@@ -519,6 +667,10 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
 
     if (activeTool === 'select') {
         setIsDragging(false);
+        if (isDragging) {
+          setRedoStack([]);
+          setCanRedo(false);
+        }
         if (selectedElement && selectedElement.isClone) {
             // Clean up marker
             const clean = { ...selectedElement };
@@ -534,6 +686,8 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
       // Optimistic Update: Add to local state immediately to prevent "disappearing" flicker
       // The server's history_update will eventually reconcile this with the authoritative state.
       setElements(prev => [...prev, currentElement]);
+      setRedoStack([]);
+      setCanRedo(false);
       
       socket.emit('stroke_end', currentElement);
       setCurrentElement(null);
@@ -566,6 +720,8 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
     };
     // Optimistic Update
     setElements(prev => [...prev, newEl]);
+    setRedoStack([]);
+    setCanRedo(false);
     socket.emit('stroke_end', newEl);
     setTextInput(null);
   };
@@ -598,9 +754,9 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
       />
 
       {/* Vertical Canvas Toolbar (Refined to match Magma/User reference) */}
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col items-center bg-white border border-gray-100 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] py-2 px-1 gap-1 z-40">
-          <ToolbarButton icon={Undo2} onClick={onUndo} title="Undo (Ctrl+Z)" disabled={elements.length === 0} />
-          <ToolbarButton icon={Redo2} onClick={onRedo} title="Redo (Ctrl+Shift+Z)" disabled={!canRedo} />
+      <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-col items-center bg-white border border-gray-100 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] py-2 px-1 gap-1 z-40">
+          <ToolbarButton icon={Undo2} onClick={handleUndo} title="Undo (Ctrl+Z)" disabled={elements.length === 0} />
+          <ToolbarButton icon={Redo2} onClick={handleRedo} title="Redo (Ctrl+Shift+Z)" disabled={!canRedo && redoStack.length === 0} />
           
           <div className="w-8 h-px bg-gray-100 my-1"></div>
           
@@ -641,7 +797,7 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
   );
 };
 
-const ToolbarButton = ({ icon: Icon, onClick, title, disabled }) => (
+const ToolbarButton = ({ icon, onClick, title, disabled }) => (
   <button
     onClick={onClick}
     title={title}
@@ -652,12 +808,12 @@ const ToolbarButton = ({ icon: Icon, onClick, title, disabled }) => (
         : "text-gray-600 hover:text-green-700 hover:bg-green-50"
     }`}
   >
-    <Icon size={20} />
+    {React.createElement(icon, { size: 20 })}
     {/* Tooltip on right */}
     {!disabled && (
-        <span className="absolute left-full ml-2 px-2 py-1 bg-gray-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
-            {title}
-        </span>
+      <span className="absolute right-full mr-2 px-2 py-1 bg-gray-800 text-white text-[10px] rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-50">
+        {title}
+      </span>
     )}
   </button>
 );
