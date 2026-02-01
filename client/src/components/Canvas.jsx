@@ -246,26 +246,18 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
   }, [elements, currentElement, pageId, selectedElement, panOffset, zoom, peerCursors, peerElements]);
   // Socket
   useEffect(() => {
-    socket.on('history', (historyData) => setElements(historyData));
+    socket.on('history_update', (historyData) => {
+        if (Array.isArray(historyData)) {
+            setElements(historyData);
+        }
+    });
     // Stroke Draw Listener
     socket.on('stroke_draw', (data) => {
         setPeerElements(prev => ({ ...prev, [data.userId]: data.element }));
     });
 
     socket.on('stroke_end', (data) => {
-        const element = data.element || data; // handle old and new format
         const userId = data.userId;
-
-        setElements(prev => {
-            const idx = prev.findIndex(e => e.id === element.id);
-            if (idx !== -1) {
-                const copy = [...prev];
-                copy[idx] = element;
-                return copy;
-            }
-            return [...prev, element];
-        });
-
         if (userId) {
             setPeerElements(prev => {
                 const next = { ...prev };
@@ -275,14 +267,12 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
         }
     });
 
-    socket.on('redo_stack', (data) => {
+    socket.on('redo_update', (data) => {
         setCanRedo(data && data.length > 0);
     });
 
     socket.on('stroke_update', (data) => {
-        const element = data.element || data;
-        setElements(prev => prev.map(el => el.id === element.id ? element : el));
-        setCanRedo(false); // New action clears redo stack
+        // Broad history_update handles this now, but we can keep it for specific optims if any
     });
 
     // Cursor Listeners
@@ -303,13 +293,12 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
     });
 
     return () => {
-      socket.off('history');
+      socket.off('history_update');
       socket.off('stroke_draw');
       socket.off('stroke_end');
+      socket.off('redo_update');
       socket.off('cursor_move');
       socket.off('user_disconnected');
-      socket.off('redo_stack');
-      socket.off('stroke_update');
     };
   }, []);
 
@@ -542,7 +531,10 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
     if (!isDrawing) return;
     setIsDrawing(false);
     if (currentElement) {
+      // Optimistic Update: Add to local state immediately to prevent "disappearing" flicker
+      // The server's history_update will eventually reconcile this with the authoritative state.
       setElements(prev => [...prev, currentElement]);
+      
       socket.emit('stroke_end', currentElement);
       setCurrentElement(null);
     }
@@ -572,6 +564,7 @@ const Canvas = ({ activeTool, color, setColor, strokeWidth, pageId, canvasRef, o
       author: socket.id,
       timestamp: Date.now()
     };
+    // Optimistic Update
     setElements(prev => [...prev, newEl]);
     socket.emit('stroke_end', newEl);
     setTextInput(null);

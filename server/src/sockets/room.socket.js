@@ -12,12 +12,12 @@ module.exports = (io, socket) => {
       if (roomState.isAllowed(roomId, email, password)) {
           // Initialize drawing state if not already done
           drawingState.initialize(roomId).then(() => {
-              socket.emit('history', drawingState.getHistory(roomId));
+              socket.emit('history_update', drawingState.getHistory(roomId));
               socket.emit('drawing_name', drawingState.getName(roomId));
               socket.emit('room_settings', roomState.getSettings(roomId));
               // Restore redoStack sync
               const drawing = drawingState.getDrawing?.(roomId) || {};
-              socket.emit('redo_stack', drawing.redoStack || []);
+              socket.emit('redo_update', drawing.redoStack || []);
           });
 
           roomState.addUser(roomId, socket.id, userData);

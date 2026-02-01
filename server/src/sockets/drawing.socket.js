@@ -13,9 +13,12 @@ module.exports = (io, socket) => {
       const roomId = socket.roomId;
       if (!roomId) return;
       await drawingState.addStroke(roomId, strokeData);
-      socket.to(roomId).emit('stroke_end', { element: strokeData, userId: socket.id });
-      // Rule 21: Broadcast that redo stack is now cleared for everyone
-      io.to(roomId).emit('redo_stack', []); 
+      const history = drawingState.getHistory(roomId);
+      // Rule: Broadcast full history for replay compliance
+      io.to(roomId).emit('history_update', history || []);
+      io.to(roomId).emit('redo_update', []);
+      // Cleanup trail for peers
+      socket.to(roomId).emit('stroke_end', { userId: socket.id });
   });
 
   // UPDATE (MOVE/RESYNC)
@@ -23,9 +26,8 @@ module.exports = (io, socket) => {
       const roomId = socket.roomId;
       if (!roomId) return;
       await drawingState.updateStroke(roomId, updatedStroke);
-      socket.to(roomId).emit('stroke_update', { element: updatedStroke, userId: socket.id }); 
-      // Rule 21: Broadcast that redo stack is now cleared for everyone
-      io.to(roomId).emit('redo_stack', []);
+      io.to(roomId).emit('history_update', drawingState.getHistory(roomId)); 
+      io.to(roomId).emit('redo_update', []);
   });
 
   // UNDO
@@ -34,8 +36,8 @@ module.exports = (io, socket) => {
       if (!roomId) return;
       if (await drawingState.undo(roomId)) {
           const drawing = drawingState.getDrawing(roomId);
-          io.to(roomId).emit('history', drawing.history);
-          io.to(roomId).emit('redo_stack', drawing.redoStack);
+          io.to(roomId).emit('history_update', drawing.undoStack);
+          io.to(roomId).emit('redo_update', drawing.redoStack);
       }
   });
 
@@ -45,8 +47,8 @@ module.exports = (io, socket) => {
       if (!roomId) return;
       if (await drawingState.redo(roomId)) {
           const drawing = drawingState.getDrawing(roomId);
-          io.to(roomId).emit('history', drawing.history);
-          io.to(roomId).emit('redo_stack', drawing.redoStack);
+          io.to(roomId).emit('history_update', drawing.undoStack);
+          io.to(roomId).emit('redo_update', drawing.redoStack);
       }
   });
 
@@ -55,7 +57,7 @@ module.exports = (io, socket) => {
       const roomId = socket.roomId;
       if (!roomId) return;
       await drawingState.clear(roomId);
-      io.to(roomId).emit('history', []);
-      io.to(roomId).emit('redo_stack', []); // Clear redo stack for all
+      io.to(roomId).emit('history_update', []);
+      io.to(roomId).emit('redo_update', []); 
   });
 };
